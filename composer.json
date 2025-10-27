@@ -8,10 +8,17 @@
     "guzzlehttp/guzzle": "^7.0",
     "timber/timber": "^2.0"
   },
+  "require-dev": {
+    "10up/wp_mock": "^1.1",
+    "phpunit/phpunit": "^9.6"
+  },
   "autoload": {
     "psr-4": {
       "Inc\\": "./inc"
     }
+  },
+  "scripts": {
+    "test": "vendor/bin/phpunit"
   },
   "config": {
     "platform-check": false,
