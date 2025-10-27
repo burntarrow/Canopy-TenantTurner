@@ -199,44 +199,97 @@ class ApiController extends EntityProcessor {
 	 *
 	 * @return int|false
 	 */
-	protected function uploadImage( string $imageUrl ): bool|int {
-		// Generate a unique filename using a hash of the image URL
-		$hash = md5( $imageUrl );
-		$filename = $hash . '.' . pathinfo( $imageUrl, PATHINFO_EXTENSION );
+        protected function uploadImage( string $imageUrl ): bool|int {
+                // Generate a unique filename using a hash of the image URL
+                $hash = md5( $imageUrl );
 
-		// Check if the image already exists
-		$attachment_id = $this->checkIfImageExists( $hash );
-		if ( $attachment_id ) {
-			return $attachment_id;
-		}
+                // Check if the image already exists
+                $attachment_id = $this->checkIfImageExists( $hash );
+                if ( $attachment_id ) {
+                        return $attachment_id;
+                }
 
-		// Proceed with uploading the image
-		$uploadDir = wp_upload_dir();
-		$imageData = file_get_contents( $imageUrl );
-		if ( wp_mkdir_p( $uploadDir['path'] ) ) {
-			$file = $uploadDir['path'] . '/' . $filename;
-		} else {
-			$file = $uploadDir['basedir'] . '/' . $filename;
-		}
-		file_put_contents( $file, $imageData );
+                $response = wp_remote_get( $imageUrl, [ 'timeout' => 15 ] );
+                if ( is_wp_error( $response ) ) {
+                        return false;
+                }
 
-		$wpFileType = wp_check_filetype( $filename, null );
-		$attachment = [
-			'post_mime_type' => $wpFileType['type'],
-			'post_title'     => sanitize_file_name( $filename ),
-			'post_content'   => '',
-			'post_status'    => 'inherit',
-		];
-		$attachId = wp_insert_attachment( $attachment, $file );
-		require_once( ABSPATH . 'wp-admin/includes/image.php' );
-		$attachData = wp_generate_attachment_metadata( $attachId, $file );
-		wp_update_attachment_metadata( $attachId, $attachData );
+                $responseCode = wp_remote_retrieve_response_code( $response );
+                if ( 200 !== $responseCode ) {
+                        return false;
+                }
 
-		// Add the hash as metadata to the attachment
-		add_post_meta( $attachId, '_image_hash', $hash );
+                $imageData = wp_remote_retrieve_body( $response );
+                if ( empty( $imageData ) ) {
+                        return false;
+                }
 
-		return $attachId;
-	}
+                if ( ! function_exists( 'wp_upload_bits' ) ) {
+                        require_once ABSPATH . 'wp-admin/includes/file.php';
+                }
+
+                $contentType = wp_remote_retrieve_header( $response, 'content-type' );
+                $filename = $this->buildImageFilename( $hash, $imageUrl, $contentType );
+
+                $upload = wp_upload_bits( $filename, null, $imageData );
+                if ( $upload['error'] ) {
+                        return false;
+                }
+
+                $file = $upload['file'];
+
+                $wpFileType = wp_check_filetype( basename( $file ), null );
+                $attachment = [
+                        'post_mime_type' => $wpFileType['type'],
+                        'post_title'     => sanitize_file_name( basename( $file ) ),
+                        'post_content'   => '',
+                        'post_status'    => 'inherit',
+                ];
+
+                $attachId = wp_insert_attachment( $attachment, $file );
+                require_once ABSPATH . 'wp-admin/includes/image.php';
+                $attachData = wp_generate_attachment_metadata( $attachId, $file );
+                wp_update_attachment_metadata( $attachId, $attachData );
+
+                // Add the hash as metadata to the attachment
+                add_post_meta( $attachId, '_image_hash', $hash );
+
+                return $attachId;
+        }
+
+        protected function buildImageFilename( string $hash, string $imageUrl, string|array|null $contentType ): string {
+                $path = parse_url( $imageUrl, PHP_URL_PATH ) ?? '';
+                $extension = strtolower( pathinfo( $path, PATHINFO_EXTENSION ) );
+
+                if ( empty( $extension ) ) {
+                        if ( is_array( $contentType ) ) {
+                                $contentType = reset( $contentType );
+                        }
+
+                        if ( is_string( $contentType ) ) {
+                                $contentType = strtolower( trim( explode( ';', $contentType )[0] ) );
+                        }
+
+                        $mimeMap = [
+                                'image/jpeg' => 'jpg',
+                                'image/jpg'  => 'jpg',
+                                'image/png'  => 'png',
+                                'image/gif'  => 'gif',
+                                'image/webp' => 'webp',
+                                'image/svg+xml' => 'svg',
+                        ];
+
+                        if ( $contentType && isset( $mimeMap[ $contentType ] ) ) {
+                                $extension = $mimeMap[ $contentType ];
+                        }
+                }
+
+                if ( empty( $extension ) ) {
+                        $extension = 'jpg';
+                }
+
+                return $hash . '.' . $extension;
+        }
 
 	protected function checkIfImageExists( string $hash ): bool|int {
 		$query_args = [
