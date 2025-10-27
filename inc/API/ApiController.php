@@ -209,47 +209,53 @@ class ApiController extends EntityProcessor {
                         return $attachment_id;
                 }
 
-                $response = wp_remote_get( $imageUrl, [ 'timeout' => 15 ] );
-                if ( is_wp_error( $response ) ) {
-                        return false;
-                }
-
-                $responseCode = wp_remote_retrieve_response_code( $response );
-                if ( 200 !== $responseCode ) {
-                        return false;
-                }
-
-                $imageData = wp_remote_retrieve_body( $response );
-                if ( empty( $imageData ) ) {
-                        return false;
-                }
-
-                if ( ! function_exists( 'wp_upload_bits' ) ) {
+                if ( ! function_exists( 'download_url' ) ) {
                         require_once ABSPATH . 'wp-admin/includes/file.php';
                 }
 
-                $contentType = wp_remote_retrieve_header( $response, 'content-type' );
-                $filename = $this->buildImageFilename( $hash, $imageUrl, $contentType );
+                if ( ! function_exists( 'media_handle_sideload' ) ) {
+                        require_once ABSPATH . 'wp-admin/includes/media.php';
+                }
 
-                $upload = wp_upload_bits( $filename, null, $imageData );
-                if ( $upload['error'] ) {
+                if ( ! function_exists( 'wp_generate_attachment_metadata' ) ) {
+                        require_once ABSPATH . 'wp-admin/includes/image.php';
+                }
+
+                $temporary_file = download_url( $imageUrl, 30 );
+                if ( is_wp_error( $temporary_file ) ) {
                         return false;
                 }
 
-                $file = $upload['file'];
+                $contentType = null;
+                $imageInfo = @getimagesize( $temporary_file );
+                if ( $imageInfo && isset( $imageInfo['mime'] ) ) {
+                        $contentType = $imageInfo['mime'];
+                }
 
-                $wpFileType = wp_check_filetype( basename( $file ), null );
-                $attachment = [
-                        'post_mime_type' => $wpFileType['type'],
-                        'post_title'     => sanitize_file_name( basename( $file ) ),
-                        'post_content'   => '',
-                        'post_status'    => 'inherit',
+                $filename = $this->buildImageFilename( $hash, $imageUrl, $contentType );
+
+                $fileSize = filesize( $temporary_file );
+                if ( false === $fileSize ) {
+                        @unlink( $temporary_file );
+
+                        return false;
+                }
+
+                $file_array = [
+                        'name'     => $filename,
+                        'tmp_name' => $temporary_file,
+                        'type'     => $contentType ?? 'image/jpeg',
+                        'size'     => $fileSize,
+                        'error'    => 0,
                 ];
 
-                $attachId = wp_insert_attachment( $attachment, $file );
-                require_once ABSPATH . 'wp-admin/includes/image.php';
-                $attachData = wp_generate_attachment_metadata( $attachId, $file );
-                wp_update_attachment_metadata( $attachId, $attachData );
+                $attachId = media_handle_sideload( $file_array, 0 );
+
+                if ( is_wp_error( $attachId ) ) {
+                        @unlink( $temporary_file );
+
+                        return false;
+                }
 
                 // Add the hash as metadata to the attachment
                 add_post_meta( $attachId, '_image_hash', $hash );
