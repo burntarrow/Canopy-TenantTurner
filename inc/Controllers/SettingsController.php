@@ -109,11 +109,11 @@ class SettingsController {
 	 */
 	public function renderIntervalField(): void {
 		$interval = get_option( 'sync_interval', 'hourly' );
-		echo '<select name="sync_interval">
-                <option value="hourly" ' . selected( $interval, 'hourly', false ) . '>Hourly</option>
-                <option value="twicedaily" ' . selected( $interval, 'twicedaily', false ) . '>Twice Daily</option>
-                <option value="daily" ' . selected( $interval, 'daily', false ) . '>Daily</option>
-              </select>';
+                echo '<select name="sync_interval">';
+                echo '<option value="hourly" ' . selected( $interval, 'hourly', false ) . '>Hourly</option>';
+                echo '<option value="twicedaily" ' . selected( $interval, 'twicedaily', false ) . '>Twice Daily</option>';
+                echo '<option value="daily" ' . selected( $interval, 'daily', false ) . '>Daily</option>';
+                echo '</select>';
 	}
 
 	/**
