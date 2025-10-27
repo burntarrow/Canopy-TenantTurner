@@ -116,15 +116,15 @@ class SettingsController {
               </select>';
 	}
 
-	/**
-	 * Render the settings page
-	 *
-	 * @return void
-	 * @throws GuzzleException
-	 */
-	public function manualSyncAction(): void {
-		$apiController = new \Inc\API\ApiController();
-		$apiController->processLocationPost();
-		wp_send_json_success( 'Sync complete!' );
-	}
+        /**
+         * Handle the manual listings sync AJAX request and return the response payload
+         *
+         * @return void
+         * @throws GuzzleException
+         */
+        public function manualSyncAction(): void {
+                $apiController = new \Inc\API\ApiController();
+                $apiController->processLocationPost();
+                wp_send_json_success( 'Sync complete!' );
+        }
 }
