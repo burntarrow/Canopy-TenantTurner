@@ -32,51 +32,30 @@ class ApiController extends EntityProcessor {
 	 */
 	public function processLocationPost(): void {
 		try {
-			$entities = get_transient( 'entities_to_process' );
-			if ( ! $entities ) {
-				$entities = $this->all();
-				set_transient( 'entities_to_process', $entities, 60 * 60 ); // Store entities in a transient for 1 hour
-			}
-
-			$this->processEntitiesBatch( $entities );
-			$this->cleanRemovedPostsFromApi( $this->all() );
+			$entities = $this->all();
+			$this->processEntities( $entities );
+			$this->cleanRemovedPostsFromApi( $entities );
 		} catch ( Exception $e ) {
 			error_log( 'Error in processLocationPost: ' . $e->getMessage() );
 		}
 	}
 
 	/**
-	 * Process entities in batches.
+	 * Process every entity returned by the API in a single run so manual syncs
+	 * complete immediately and WP-Cron is not required to finish the import.
 	 *
 	 * @param  array  $entities
 	 *
 	 * @return void
 	 */
-	private function processEntitiesBatch( array &$entities ): void {
-		$batchSize = 10; // Process 10 entities at a time
-		$processed = 0;
-
-		foreach ( $entities as $index => $entity ) {
-			if ( $processed >= $batchSize ) {
-				break;
-			}
-
+	private function processEntities( array $entities ): void {
+		foreach ( $entities as $entity ) {
 			$postExists = $this->getPostBySlug( $entity->id, self::POST_TYPE );
 			if ( $postExists ) {
 				$this->updateEntity( $postExists, $entity, self::POST_TYPE );
 			} else {
 				$this->createEntity( $entity, self::POST_TYPE );
 			}
-
-			unset( $entities[ $index ] );
-			$processed ++;
-		}
-
-		if ( ! empty( $entities ) ) {
-			set_transient( 'entities_to_process', $entities, 60 * 60 ); // Update the transient
-			wp_schedule_single_event( time() + 60, 'canopy_listings_sync' ); // Schedule the next batch in 1 minute
-		} else {
-			delete_transient('entities_to_process'); // Clear the transient if all entities are processed
 		}
 	}
 
@@ -97,7 +76,7 @@ class ApiController extends EntityProcessor {
 				'GET',
 				'/listings/customer/20544',
 				[
-					'form_params' => [
+					'query' => [
 						'per_page' => self::FETCH_LIMIT,
 						'page'     => $page,
 					],
